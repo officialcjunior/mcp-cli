@@ -2,9 +2,14 @@
   "name": "mcp-cli",
   "version": "1.0.0",
   "description": "Interactive CLI client for Model Context Protocol (MCP) servers with OAuth support",
-  "main": "dist/cli/cli.js",
+  "main": "dist/lib/index.js",
+  "types": "dist/lib/index.d.ts",
   "bin": {
     "mcp-cli": "dist/cli/cli.js"
+  },
+  "exports": {
+    ".": "./dist/lib/index.js",
+    "./cli": "./dist/cli/cli.js"
   },
   "type": "module",
   "scripts": {
@@ -21,7 +26,7 @@
     "interactive",
     "tools"
   ],
-  "author": "Your Name",
+  "author": "Aswin C",
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0"
@@ -35,6 +40,7 @@
   },
   "files": [
     "dist/**/*",
+    "examples/**/*",
     "README.md"
   ]
 } 

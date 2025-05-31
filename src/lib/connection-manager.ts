@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
@@ -5,45 +6,64 @@ import { UnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js';
 import { OAuthClientMetadata } from '@modelcontextprotocol/sdk/shared/auth.js';
 
 import { InMemoryOAuthClientProvider } from '../auth/oauth-provider.js';
-import { openBrowser } from '../utils/browser.js';
-import { waitForOAuthCallback } from '../utils/oauth-callback.js';
+import { TransportType, ConnectionResult, OAuthHandler } from './types.js';
 
-export type TransportType = 'streamable-http' | 'sse';
-
-export interface ConnectionResult {
-  client: Client;
-  transport: StreamableHTTPClientTransport | SSEClientTransport;
-  transportType: TransportType;
+export interface ConnectionManagerConfig {
+  callbackPort?: number;
+  oauthMetadata?: OAuthClientMetadata;
+  transportPriority?: TransportType[];
+  connectionTimeout?: number;
+  oauthHandler?: OAuthHandler;
 }
 
-export class ConnectionManager {
+export class ConnectionManager extends EventEmitter {
   private oauthProvider: InMemoryOAuthClientProvider | null = null;
+  private config: ConnectionManagerConfig & { 
+    callbackPort: number;
+    oauthMetadata: OAuthClientMetadata;
+    transportPriority: TransportType[];
+    connectionTimeout: number;
+  };
 
-  constructor(
-    private readonly callbackPort: number = 8090
-  ) {}
-
-  /**
-   * Create OAuth provider with browser redirect handling
-   */
-  private createOAuthProvider(): InMemoryOAuthClientProvider {
-    const callbackUrl = `http://localhost:${this.callbackPort}/callback`;
+  constructor(config: ConnectionManagerConfig = {}) {
+    super();
     
-    const clientMetadata: OAuthClientMetadata = {
-      client_name: 'MCP CLI Client',
-      redirect_uris: [callbackUrl],
-      grant_types: ['authorization_code', 'refresh_token'],
-      response_types: ['code'],
-      token_endpoint_auth_method: 'client_secret_post',
-      scope: 'mcp:tools'
+    // Set defaults
+    this.config = {
+      callbackPort: config.callbackPort ?? 8090,
+      oauthMetadata: config.oauthMetadata ?? {
+        client_name: 'MCP CLI Client',
+        redirect_uris: [`http://localhost:${config.callbackPort ?? 8090}/callback`],
+        grant_types: ['authorization_code', 'refresh_token'],
+        response_types: ['code'],
+        token_endpoint_auth_method: 'client_secret_post',
+        scope: 'mcp:tools'
+      },
+      transportPriority: config.transportPriority ?? ['streamable-http', 'sse'],
+      connectionTimeout: config.connectionTimeout ?? 30000,
+      oauthHandler: config.oauthHandler
     };
 
+    // Update redirect URI in metadata if callbackPort was provided
+    if (config.callbackPort && !config.oauthMetadata) {
+      this.config.oauthMetadata.redirect_uris = [`http://localhost:${config.callbackPort}/callback`];
+    }
+  }
+
+  /**
+   * Create OAuth provider with configurable redirect handling
+   */
+  private createOAuthProvider(): InMemoryOAuthClientProvider {
+    const callbackUrl = `http://localhost:${this.config.callbackPort}/callback`;
+    
     return new InMemoryOAuthClientProvider(
       callbackUrl,
-      clientMetadata,
+      this.config.oauthMetadata,
       (redirectUrl: URL) => {
-        console.log(`📌 OAuth redirect handler called - opening browser`);
-        openBrowser(redirectUrl.toString());
+        this.emit('oauth-redirect', redirectUrl.toString());
+        if (this.config.oauthHandler) {
+          this.config.oauthHandler.handleRedirect(redirectUrl.toString());
+        }
       }
     );
   }
@@ -52,7 +72,7 @@ export class ConnectionManager {
    * Attempt connection with Streamable HTTP transport and OAuth
    */
   private async attemptStreamableHttpConnection(baseUrl: URL): Promise<ConnectionResult> {
-    console.log('🚢 Trying Streamable HTTP transport with OAuth...');
+    this.emit('connection-attempt', 'streamable-http');
 
     const client = new Client({
       name: 'mcp-cli',
@@ -60,7 +80,7 @@ export class ConnectionManager {
     });
 
     client.onerror = (error) => {
-      console.error('Client error:', error);
+      this.emit('error', error);
     };
 
     this.oauthProvider = this.createOAuthProvider();
@@ -69,9 +89,7 @@ export class ConnectionManager {
     });
 
     try {
-      console.log('🔌 Attempting connection (this may trigger OAuth redirect)...');
       await client.connect(transport);
-      console.log('✅ Connected successfully with Streamable HTTP + OAuth');
       
       return {
         client,
@@ -80,11 +98,15 @@ export class ConnectionManager {
       };
     } catch (error) {
       if (error instanceof UnauthorizedError) {
-        console.log('🔐 OAuth required - waiting for authorization...');
-        const callbackPromise = waitForOAuthCallback(this.callbackPort);
-        const authCode = await callbackPromise;
+        // OAuth required
+        if (!this.config.oauthHandler) {
+          throw new Error('OAuth required but no OAuth handler provided');
+        }
+        
+        const authCode = await this.config.oauthHandler.waitForCallback();
+        this.emit('oauth-callback-received', authCode);
+        
         await transport.finishAuth(authCode);
-        console.log('🔐 Authorization completed, reconnecting...');
         
         // Retry connection after OAuth completion
         const retryClient = new Client({
@@ -102,6 +124,7 @@ export class ConnectionManager {
           transportType: 'streamable-http'
         };
       } else {
+        this.emit('connection-failed', 'streamable-http', error as Error);
         throw error;
       }
     }
@@ -111,8 +134,7 @@ export class ConnectionManager {
    * Attempt connection with SSE transport (fallback)
    */
   private async attemptSSEConnection(baseUrl: URL): Promise<ConnectionResult> {
-    console.log('📡 Falling back to SSE transport...');
-    console.log('⚠️  Note: SSE transport may have limited OAuth support');
+    this.emit('connection-attempt', 'sse');
 
     const client = new Client({
       name: 'mcp-cli-sse',
@@ -120,14 +142,13 @@ export class ConnectionManager {
     });
 
     client.onerror = (error) => {
-      console.error('SSE Client error:', error);
+      this.emit('error', error);
     };
 
     const transport = new SSEClientTransport(baseUrl);
     
     try {
       await client.connect(transport);
-      console.log('✅ Connected using SSE transport');
       
       return {
         client,
@@ -135,6 +156,8 @@ export class ConnectionManager {
         transportType: 'sse'
       };
     } catch (error) {
+      this.emit('connection-failed', 'sse', error as Error);
+      
       // Add more specific error handling
       if (error instanceof Error) {
         if (error.message.includes('fetch')) {
@@ -151,34 +174,30 @@ export class ConnectionManager {
    * Connect to MCP server with OAuth and transport fallback
    */
   async connect(serverUrl: string): Promise<ConnectionResult> {
-    console.log(`🔗 Attempting to connect to ${serverUrl} with OAuth...`);
-    
     const baseUrl = new URL(serverUrl);
     
-    try {
-      // Try Streamable HTTP with OAuth first
-      return await this.attemptStreamableHttpConnection(baseUrl);
-    } catch (streamableError) {
-      console.log(`Streamable HTTP connection failed: ${streamableError}`);
-      
+    for (const transportType of this.config.transportPriority) {
       try {
-        // Fall back to SSE transport
-        return await this.attemptSSEConnection(baseUrl);
-      } catch (sseError) {
-        console.error(`Failed to connect with either transport method:`);
-        console.error(`1. Streamable HTTP error: ${streamableError}`);
-        console.error(`2. SSE error: ${sseError}`);
+        let result: ConnectionResult;
         
-        // Provide helpful error messages
-        if (String(streamableError).includes('ECONNREFUSED')) {
-          throw new Error(`Cannot connect to server at ${serverUrl}. Please ensure the MCP server is running and accessible.`);
-        } else if (String(streamableError).includes('timeout')) {
-          throw new Error(`Connection timeout to ${serverUrl}. The server may be slow to respond or unreachable.`);
+        if (transportType === 'streamable-http') {
+          result = await this.attemptStreamableHttpConnection(baseUrl);
         } else {
-          throw new Error(`Could not connect to server at ${serverUrl} with any available transport method.`);
+          result = await this.attemptSSEConnection(baseUrl);
         }
+        
+        this.emit('connected', result.transportType);
+        return result;
+      } catch (error) {
+        // Continue to next transport type
+        continue;
       }
     }
+    
+    // If we get here, all transports failed
+    const error = new Error(`Could not connect to server at ${serverUrl} with any available transport method.`);
+    this.emit('error', error);
+    throw error;
   }
 
   /**

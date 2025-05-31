@@ -1,19 +1,11 @@
 import { createInterface } from 'node:readline';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { LoggingMessageNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
-
-import { ConnectionManager, ConnectionResult, TransportType } from '../transports/connection-manager.js';
-import { InMemoryOAuthClientProvider } from '../auth/oauth-provider.js';
+import { MCPClient, BrowserOAuthHandler } from '../lib/index.js';
 import { listTools } from '../cli/commands/list-tools.js';
 import { showToolDetails } from '../cli/commands/tool-details.js';
 import { callTool, parseToolCallCommand } from '../cli/commands/call-tool.js';
 
 export class InteractiveClient {
-  private client: Client | null = null;
-  private transport: any = null;
-  private transportType: TransportType | null = null;
-  private oauthProvider: InMemoryOAuthClientProvider | null = null;
-  private connectionManager: ConnectionManager;
+  private mcpClient: MCPClient;
   
   private readonly rl = createInterface({
     input: process.stdin,
@@ -21,7 +13,47 @@ export class InteractiveClient {
   });
 
   constructor(private serverUrl: string) {
-    this.connectionManager = new ConnectionManager();
+    this.mcpClient = new MCPClient({
+      callbackPort: 8090,
+      oauthHandler: new BrowserOAuthHandler(8090)
+    });
+
+    // Convert library events to CLI output
+    this.mcpClient.on('connected', (transport) => {
+      console.log(`🎯 Successfully connected using ${transport} transport`);
+    });
+
+    this.mcpClient.on('connection-attempt', (transport) => {
+      if (transport === 'streamable-http') {
+        console.log('🚢 Trying Streamable HTTP transport with OAuth...');
+      } else {
+        console.log('📡 Falling back to SSE transport...');
+        console.log('⚠️  Note: SSE transport may have limited OAuth support');
+      }
+    });
+
+    this.mcpClient.on('oauth-redirect', (url) => {
+      console.log(`📌 OAuth redirect handler called - opening browser`);
+    });
+
+    this.mcpClient.on('oauth-callback-received', (code) => {
+      console.log(`✅ Authorization code received: ${code?.substring(0, 10)}...`);
+      console.log('🔐 Authorization completed, reconnecting...');
+    });
+
+    this.mcpClient.on('connection-failed', (transport, error) => {
+      console.log(`${transport} connection failed: ${error}`);
+    });
+
+    this.mcpClient.on('notification', (notification) => {
+      console.log(`\nNotification: ${notification.params.level} - ${notification.params.data}`);
+      // Re-display the prompt
+      process.stdout.write('mcp> ');
+    });
+
+    this.mcpClient.on('error', (error) => {
+      console.error('Client error:', error);
+    });
   }
 
   /**
@@ -38,21 +70,8 @@ export class InteractiveClient {
    */
   async connect(): Promise<void> {
     try {
-      const connectionResult: ConnectionResult = await this.connectionManager.connect(this.serverUrl);
-      
-      this.client = connectionResult.client;
-      this.transport = connectionResult.transport;
-      this.transportType = connectionResult.transportType;
-      this.oauthProvider = this.connectionManager.getOAuthProvider();
-
-      // Set up notification handlers
-      this.client.setNotificationHandler(LoggingMessageNotificationSchema, (notification) => {
-        console.log(`\nNotification: ${notification.params.level} - ${notification.params.data}`);
-        // Re-display the prompt
-        process.stdout.write('mcp> ');
-      });
-
-      console.log(`🎯 Successfully connected using ${this.transportType} transport`);
+      console.log(`🔗 Attempting to connect to ${this.serverUrl} with OAuth...`);
+      await this.mcpClient.connect(this.serverUrl);
       
       // Start interactive loop
       await this.interactiveLoop();
@@ -89,8 +108,9 @@ export class InteractiveClient {
 
     console.log(`Starting notification stream: interval=${interval}ms, count=${count}`);
     
-    if (this.client) {
-      await callTool(this.client, 'start-notification-stream', { interval, count });
+    const client = this.mcpClient.getClient();
+    if (client) {
+      await callTool(client, 'start-notification-stream', { interval, count });
     }
   }
 
@@ -98,15 +118,14 @@ export class InteractiveClient {
    * Show current connection status
    */
   private showStatus(): void {
+    const status = this.mcpClient.getConnectionStatus();
+    const oauthProvider = this.mcpClient.getOAuthProvider();
+    
     console.log('\n📊 Connection Status:');
     console.log(`  Server URL: ${this.serverUrl}`);
-    console.log(`  Transport: ${this.transportType || 'Not connected'}`);
-    console.log(`  Client: ${this.client ? 'Connected' : 'Disconnected'}`);
-    console.log(`  OAuth: ${this.oauthProvider?.tokens() ? 'Authenticated' : 'Not authenticated'}`);
-    
-    if (this.transport && 'sessionId' in this.transport) {
-      console.log(`  Session ID: ${this.transport.sessionId || 'None'}`);
-    }
+    console.log(`  Transport: ${status.transportType || 'Not connected'}`);
+    console.log(`  Client: ${status.isConnected ? 'Connected' : 'Disconnected'}`);
+    console.log(`  OAuth: ${status.hasOAuth ? 'Authenticated' : 'Not authenticated'}`);
   }
 
   /**
@@ -132,8 +151,9 @@ export class InteractiveClient {
    * Main interactive loop for user commands
    */
   async interactiveLoop(): Promise<void> {
+    const status = this.mcpClient.getConnectionStatus();
     console.log('\n🎯 Interactive MCP Client');
-    console.log(`Connected via: ${this.transportType}`);
+    console.log(`Connected via: ${status.transportType}`);
     console.log('Type "help" for available commands or "quit" to exit');
     console.log();
 
@@ -150,25 +170,28 @@ export class InteractiveClient {
         } else if (command === 'help') {
           this.showHelp();
         } else if (command === 'list') {
-          if (this.client) {
-            await listTools(this.client);
+          const client = this.mcpClient.getClient();
+          if (client) {
+            await listTools(client);
           } else {
             console.log('❌ Not connected to server');
           }
         } else if (command.startsWith('tool-details ')) {
           const toolName = command.split(' ')[1];
-          if (toolName && this.client) {
-            await showToolDetails(this.client, toolName);
+          const client = this.mcpClient.getClient();
+          if (toolName && client) {
+            await showToolDetails(client, toolName);
           } else if (!toolName) {
             console.log('❌ Please specify a tool name');
           } else {
             console.log('❌ Not connected to server');
           }
         } else if (command.startsWith('call ')) {
-          if (this.client) {
+          const client = this.mcpClient.getClient();
+          if (client) {
             const parsed = parseToolCallCommand(command);
             if (parsed) {
-              await callTool(this.client, parsed.toolName, parsed.toolArgs);
+              await callTool(client, parsed.toolName, parsed.toolArgs);
             }
           } else {
             console.log('❌ Not connected to server');
@@ -194,12 +217,10 @@ export class InteractiveClient {
    * Clean up resources
    */
   async close(): Promise<void> {
-    if (this.transport) {
-      try {
-        await this.transport.close();
-      } catch (error) {
-        console.error('Error closing transport:', error);
-      }
+    try {
+      await this.mcpClient.close();
+    } catch (error) {
+      console.error('Error closing client:', error);
     }
     this.rl.close();
   }
