@@ -1,8 +1,12 @@
 import { createInterface } from 'node:readline';
-import { MCPClient, BrowserOAuthHandler } from '../lib/index.js';
-import { listTools } from '../cli/commands/list-tools.js';
-import { showToolDetails } from '../cli/commands/tool-details.js';
-import { callTool, parseToolCallCommand } from '../cli/commands/call-tool.js';
+import { 
+  MCPClient, 
+  BrowserOAuthHandler,
+  listTools,
+  showToolDetails,
+  callTool,
+  parseToolCallCommand
+} from 'mcp-client-toolkit';
 
 export class InteractiveClient {
   private mcpClient: MCPClient;
