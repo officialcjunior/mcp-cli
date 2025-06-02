@@ -7,34 +7,66 @@ const DEFAULT_SERVER_URL = 'http://localhost:3000/mcp';
 
 function showUsage(): void {
   console.log('🚀 MCP CLI - Interactive Client for Model Context Protocol');
-  console.log();
-  console.log('Usage:');
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  
+  // CLI Usage
+  console.log('\n📌 CLI Usage:');
   console.log('  mcp-cli [server-url]');
   console.log('  npx mcp-cli [server-url]');
-  console.log();
-  console.log('Arguments:');
+  
+  // CLI Arguments
+  console.log('\n🔧 Arguments:');
   console.log('  server-url    MCP server URL (default: http://localhost:3000/mcp)');
-  console.log();
-  console.log('Environment Variables:');
+  console.log('  --help, -h    Show this help message');
+  
+  // Environment Variables
+  console.log('\n🌍 Environment Variables:');
   console.log('  MCP_SERVER_URL    MCP server URL (overrides default)');
-  console.log();
-  console.log('Examples:');
-  console.log('  mcp-cli');
-  console.log('  mcp-cli http://localhost:8080/mcp');
-  console.log('  mcp-cli https://example.com/mcp');
-  console.log();
-  console.log('Features:');
+  
+  // Features
+  console.log('\n✨ Features:');
   console.log('  • OAuth 2.0 authentication support');
   console.log('  • Automatic transport fallback (HTTP → SSE)');
   console.log('  • Interactive command shell');
   console.log('  • Tool discovery and execution');
   console.log('  • Real-time notifications');
+  
+  // Interactive Mode Commands
+  console.log('\n💻 Interactive Mode Commands:');
+  console.log('  help                           - Show this help message');
+  console.log('  quit, exit                     - Exit the client');
+  console.log('  status                         - Show connection status');
+  console.log('  list                           - List available tools');
+  console.log('  tool-details <name>            - Show detailed schema for a tool');
+  console.log('  call <tool_name> [args]        - Call a tool with JSON arguments');
+  console.log('  notifications [interval] [count] - Start notification stream');
+  
+  // Examples
+  console.log('\n💡 Examples:');
+  console.log('  # Start with default server');
+  console.log('  $ mcp-cli');
+  console.log('\n  # Connect to specific server');
+  console.log('  $ mcp-cli http://localhost:8080/mcp');
+  console.log('\n  # Interactive mode commands');
+  console.log('  mcp> list');
+  console.log('  mcp> tool-details file-operations');
+  console.log('  mcp> call my-tool {"param": "value", "number": 42}');
+  console.log('  mcp> notifications 1000 10');
+  
+  // Tips
+  console.log('\n💭 Tips:');
+  console.log('  • Use tool-details to see required arguments for a tool');
+  console.log('  • Arguments must be valid JSON format');
+  console.log('  • Press Ctrl+C to exit at any time');
+  console.log('  • Check status if you experience connection issues');
+  console.log('  • Set MCP_SERVER_URL env var to avoid typing the URL');
 }
 
 function parseArguments(): { serverUrl: string; showHelp: boolean } {
   const args = process.argv.slice(2);
   
-  if (args.includes('--help') || args.includes('-h')) {
+  // Show help if no arguments or help flag is provided
+  if (args.length === 0 || args.includes('--help') || args.includes('-h')) {
     return { serverUrl: '', showHelp: true };
   }
   

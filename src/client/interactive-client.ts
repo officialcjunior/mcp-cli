@@ -132,19 +132,46 @@ export class InteractiveClient {
    * Show help information
    */
   private showHelp(): void {
-    console.log('\n📖 Available Commands:');
+    console.log('\n📖 MCP Interactive Client Help');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    
+    // Basic Commands
+    console.log('\n🔰 Basic Commands:');
+    console.log('  help                           - Show this help message');
+    console.log('  quit, exit                     - Exit the client');
+    console.log('  status                         - Show connection status');
+    
+    // Tool Management
+    console.log('\n🔧 Tool Management:');
     console.log('  list                           - List available tools');
     console.log('  tool-details <name>            - Show detailed schema for a tool');
     console.log('  call <tool_name> [args]        - Call a tool with JSON arguments');
+    
+    // Notifications
+    console.log('\n📢 Notifications:');
     console.log('  notifications [interval] [count] - Start notification stream');
-    console.log('  status                         - Show connection status');
-    console.log('  help                           - Show this help message');
-    console.log('  quit                           - Exit the client');
+    console.log('    interval: Time between notifications in ms (default: 2000)');
+    console.log('    count: Number of notifications to receive (default: 5)');
+    
+    // Examples
     console.log('\n💡 Examples:');
-    console.log('  call my-tool {"param": "value", "number": 42}');
-    console.log('  tool-details file-operations');
-    console.log('  notifications 1000 10');
+    console.log('  # List all available tools');
+    console.log('  > list');
+    console.log('\n  # Get details about a specific tool');
+    console.log('  > tool-details file-operations');
+    console.log('\n  # Call a tool with arguments');
+    console.log('  > call my-tool {"param": "value", "number": 42}');
+    console.log('\n  # Start notification stream (1 sec interval, 10 notifications)');
+    console.log('  > notifications 1000 10');
+    console.log('\n  # Check connection status');
+    console.log('  > status');
+    
+    // Tips
+    console.log('\n💭 Tips:');
+    console.log('  • Use tool-details to see required arguments for a tool');
+    console.log('  • Arguments must be valid JSON format');
+    console.log('  • Press Ctrl+C to exit at any time');
+    console.log('  • Check status if you experience connection issues');
   }
 
   /**
