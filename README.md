@@ -2,6 +2,8 @@
 
 Interactive CLI client and library for Model Context Protocol (MCP) servers with OAuth 2.0 support.
 
+![demo.gif](demo.gif)
+
 ## Features
 
 - **Dual Purpose**: Use as CLI tool or integrate as a library
@@ -9,22 +11,12 @@ Interactive CLI client and library for Model Context Protocol (MCP) servers with
 - **Transport Fallback**: Automatic fallback from Streamable HTTP to SSE
 - **Interactive Shell**: Command-line interface for tool discovery and execution
 - **Real-time Notifications**: Support for server-sent notifications
-- **Event-driven API**: Clean library interface with event emitters
-- **TypeScript Support**: Full TypeScript definitions included
-- **Cross-platform**: Works on Windows, macOS, and Linux
 
 ## Installation
 
-### As a CLI Tool
-
+Clone and run:
 ```bash
 npm install -g mcp-cli
-```
-
-### As a Library
-
-```bash
-npm install mcp-cli
 ```
 
 ## CLI Usage
@@ -257,28 +249,6 @@ npm run build
 npm run dev  # Watch mode
 npm start    # Run built CLI version
 ```
-
-### Project Structure
-
-```
-src/
-├── lib/                    # Library code
-│   ├── mcp-client.ts      # Main client class
-│   ├── connection-manager.ts # Connection handling
-│   ├── oauth-handlers.ts   # OAuth implementations
-│   ├── types.ts           # TypeScript interfaces
-│   └── index.ts           # Public API exports
-├── cli/                   # CLI-specific code
-│   ├── cli.ts            # CLI entry point
-│   └── commands/         # CLI commands
-├── client/               # Interactive client
-└── auth/                 # Authentication utilities
-```
-
-## Requirements
-
-- Node.js 18.0.0 or higher
-- Modern web browser (for default OAuth flow)
 
 ## License
 
